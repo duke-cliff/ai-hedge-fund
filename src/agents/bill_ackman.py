@@ -47,7 +47,7 @@ def bill_ackman_agent(state: AgentState):
             ],
             end_date,
             period="annual",  # or "ttm" if you prefer trailing 12 months
-            limit=5           # fetch up to 5 annual periods (or more if needed)
+            limit=10           # fetch up to 5 annual periods (or more if needed)
         )
         
         progress.update_status("bill_ackman_agent", ticker, "Getting market cap")

@@ -55,7 +55,7 @@ def cathie_wood_agent(state: AgentState):
             ],
             end_date,
             period="annual",
-            limit=5
+            limit=10
         )
 
         progress.update_status("cathie_wood_agent", ticker, "Getting market cap")

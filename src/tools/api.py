@@ -1,8 +1,11 @@
+from collections import defaultdict
+from typing import Dict, List
 import os
 import pandas as pd
 import requests
 
-from data.cache import get_cache
+#from data.cache import get_cache
+from data.redis_cache import get_cache
 from data.models import (
     CompanyNews,
     CompanyNewsResponse,
@@ -89,7 +92,7 @@ def get_financial_metrics(
     return financial_metrics
 
 
-def search_line_items(
+def search_line_items_nocache(
     ticker: str,
     line_items: list[str],
     end_date: str,
@@ -122,6 +125,96 @@ def search_line_items(
 
     # Cache the results
     return search_results[:limit]
+
+def search_line_items(
+    ticker: str,
+    line_items: list[str],
+    end_date: str,
+    period: str = "ttm",
+    limit: int = 10,
+) -> list[LineItem]:
+    """Fetch line items from cache or API, merging results by report_period."""
+
+    merged_data_by_period: Dict[str, dict] = defaultdict(lambda: {
+        "ticker": ticker,
+        "report_period": "",
+        "period": period,
+        "currency": "USD"  # placeholder; real value comes from API
+    })
+    missing_line_items: list[str] = []
+
+    # 1. Try fetching each line_item from cache
+    for item in line_items:
+        redis_key = f"{ticker}:{item}"
+        cached = _cache.get_line_items(redis_key)
+        if cached:
+            for entry in cached:
+                if entry["report_period"] <= end_date:
+                    rp = entry["report_period"]
+                    merged_data_by_period[rp]["report_period"] = rp
+                    merged_data_by_period[rp][item] = entry[item]
+        else:
+            missing_line_items.append(item)
+
+    # 2. If no missing items, return from cache
+    if not missing_line_items:
+        sorted_periods = sorted(merged_data_by_period.keys(), reverse=True)
+        return [
+            LineItem(**merged_data_by_period[period])
+            for period in sorted_periods[:limit]
+        ]
+
+    # 3. Fetch missing line_items from API
+    headers = {}
+    if api_key := os.environ.get("FINANCIAL_DATASETS_API_KEY"):
+        headers["X-API-KEY"] = api_key
+
+    url = "https://api.financialdatasets.ai/financials/search/line-items"
+    body = {
+        "tickers": [ticker],
+        "line_items": missing_line_items,
+        "end_date": end_date,
+        "period": period,
+        "limit": limit,
+    }
+
+    response = requests.post(url, headers=headers, json=body)
+    if response.status_code != 200:
+        raise Exception(f"Error fetching data: {ticker} - {response.status_code} - {response.text}")
+
+    response_model = LineItemResponse(**response.json())
+    new_results = response_model.search_results
+
+    # 4. Cache fetched line_items and merge into result
+    line_item_grouped: Dict[str, list[dict]] = defaultdict(list)
+
+    for item in new_results:
+        rp = item.report_period
+        merged_data_by_period[rp]["report_period"] = rp
+        merged_data_by_period[rp]["period"] = item.period
+        merged_data_by_period[rp]["currency"] = item.currency
+
+        for li in missing_line_items:
+            value = getattr(item, li, None)
+            if value is not None:
+                merged_data_by_period[rp][li] = value
+                line_item_grouped[li].append({
+                    "ticker": item.ticker,
+                    "report_period": item.report_period,
+                    li: value,
+                })
+
+    # 5. Persist line_items separately in Redis
+    for li_name, li_data in line_item_grouped.items():
+        redis_key = f"{ticker}:{li_name}"
+        _cache.set_line_items(redis_key, li_data)
+
+    # 6. Build final merged result
+    sorted_periods = sorted(merged_data_by_period.keys(), reverse=True)
+    return [
+        LineItem(**merged_data_by_period[period])
+        for period in sorted_periods[:limit]
+    ]
 
 
 def get_insider_trades(

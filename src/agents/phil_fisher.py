@@ -71,7 +71,7 @@ def phil_fisher_agent(state: AgentState):
             ],
             end_date,
             period="annual",
-            limit=5,
+            limit=10,
         )
 
         progress.update_status("phil_fisher_agent", ticker, "Getting market cap")

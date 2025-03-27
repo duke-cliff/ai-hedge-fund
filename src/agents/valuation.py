@@ -46,7 +46,7 @@ def valuation_agent(state: AgentState):
             ],
             end_date=end_date,
             period="ttm",
-            limit=2,
+            limit=10,
         )
 
         # Add safety check for financial line items
