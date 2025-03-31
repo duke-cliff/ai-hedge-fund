@@ -145,7 +145,7 @@ def search_line_items(
 
     # 1. Try fetching each line_item from cache
     for item in line_items:
-        redis_key = f"{ticker}:{item}"
+        redis_key = f"{ticker}:{item}:{period}"
         cached = _cache.get_line_items(redis_key)
         if cached:
             for entry in cached:
@@ -206,7 +206,7 @@ def search_line_items(
 
     # 5. Persist line_items separately in Redis
     for li_name, li_data in line_item_grouped.items():
-        redis_key = f"{ticker}:{li_name}"
+        redis_key = f"{ticker}:{li_name}:{period}"
         _cache.set_line_items(redis_key, li_data)
 
     # 6. Build final merged result
